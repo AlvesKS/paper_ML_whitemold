@@ -1,0 +1,75 @@
+project:
+  type: website
+  output-dir: docs
+  execute-dir: project
+  render:
+    - about.qmd
+    - index.qmd
+    - code_weather_white-mold.qmd
+    - code_soil_variables_white-mold.qmd
+    - code_fda_white-mold.qmd
+    - code_boosting_white-mold.qmd
+    - "!data_era5/"
+    - "!data_white-mold/"
+    - "!figs/"
+    - "!functions/"
+    - "!shape_files/"
+    - "!soil_images/"
+    - "!xgboost/"
+
+    
+# editor: visual
+
+website:
+  title: "Data & Codes"
+  page-navigation: true
+  opengraph: true
+  open-graph: true
+  repo-url: https://github.com/AlvesKS/paper_ML_whitemold
+  repo-actions: [edit, issue]
+  search: 
+    location: navbar
+    type: textbox  
+  sidebar:
+    style: "floating"
+    search: true
+    contents: 
+      - section: Repository
+        contents: 
+        - index.qmd
+        - about.qmd
+      - section: Data sources
+        contents:
+          - code_weather_white-mold.qmd
+          - code_soil_variables_white-mold.qmd
+      - section: Data analysis
+        contents: 
+          - code_fda_white-mold.qmd
+          - code_boosting_white-mold.qmd
+          
+          
+    tools:
+      - icon: twitter
+        href: https://twitter.com/AlvesKS_
+      - icon: github
+        href: https://github.com/AlvesKS/paper_ML_whitemold
+      - icon: download
+        href: https://osf.io/v53py/
+  page-footer: "Copyright © 2022 Kaique S. Alves" 
+    
+      
+format:
+  html:
+    self-contained: false
+    # theme: cosmo
+    css: styles.css
+    toc: true
+    smooth-scroll: true
+    
+execute:
+  cache: false
+
+
+theme:
+  light: flatly
+  dark: darkly

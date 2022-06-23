@@ -1,0 +1,875 @@
+---
+title: XgBoost model
+---
+
+# Libraries
+
+::: callout-warning
+# About R packages
+
+Make sure to have all R packages installed before running the analysis described in this website.
+:::
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(SHAPforxgboost)
+library(cowplot)
+library(lemon)
+library(ggthemes)
+library(ggdist)
+library(patchwork)
+library(rgr)
+library(vip)
+library(pdp)
+library(doParallel)
+
+theme_set(theme_half_open(font_size = 12))
+```
+
+```{r eval=TRUE, include=FALSE}
+library(knitr)
+
+knit_print.data.frame <- function (x, options, ...) {
+  rmarkdown::paged_table(x, options) %>% 
+    rmarkdown:::print.paged_df()
+}
+
+registerS3method("knit_print", "data.frame", knit_print.data.frame)
+```
+
+## Data Fusion
+
+### Load white mold data
+
+```{r}
+wm_load = read.csv("data_white-mold/data_model_plus_weather_filtered.csv")
+wm_load
+```
+
+#### Wragling
+
+```{r}
+wm_data = wm_load %>%
+  #transform these columns into Date format
+  mutate(date = as.Date(date),
+         sampling.date =  as.Date(sampling.date),
+         planting.date = as.Date(planting.date)) %>% 
+  
+  # Calculate dap
+  mutate(dap = date-planting.date) %>% 
+  # #
+  # # mutate(gddi = ((t2m_max +t2m_min)*0.5)-0) %>%
+  # group_by(subject) %>% 
+  # mutate(gdd = cumsum(gddi)) %>% 
+  
+  group_by(subject) %>% 
+  mutate(wm = (mean(wm, na.rm =T)>0)*1) %>% 
+  ungroup() %>% 
+  filter(!is.na(wm))
+  
+  
+wm_data
+```
+
+### Functional data analysis data
+
+```{r}
+white_load_fda = read.csv("data_white-mold/data_fda_sig_diff.csv") %>% 
+  filter(dap<=50,
+         dap>=-15)%>% 
+  separate(var, into =c("var", "stats"), sep ="_") %>% 
+  mutate(var = toupper(var)
+         # stats = ifelse(is.na(stats),"",stats)
+         ) %>% 
+  unite(var,var, stats, sep = " ", na.rm = T) %>% 
+  mutate(sig_diff = case_when(var == "RH" & dap %in% c(40:50) ~ TRUE,
+                              TRUE ~ sig_diff)) %>% 
+  filter(var != "DPD")
+
+var_names = unique(white_load_fda$var)
+```
+
+-   Defining periods
+
+This function define and name the periods that the functional curves significatively difered from zero or not.
+
+```{r}
+define_interval = function(variable, data){
+
+test_df = data  %>%
+  filter(var == variable ) %>%
+  group_by(subject,var, wm) %>% 
+  mutate(sig_diff = sig_diff*1) 
+
+
+period = numeric(length(-15:50))
+period_all = numeric( length(-15:50)*length(unique(test_df$subject)) )
+
+inter = 1:66
+for(j in unique(test_df$subject)){
+  
+ per = 1 
+ 
+ filt_df = test_df %>% 
+      filter(subject == j)
+ 
+  # current = filt_df$sig_diff[1]
+  period[1]= per
+  
+  for(i in 1:(length(-15:49))){
+  
+   if(filt_df$sig_diff[i+1] == filt_df$sig_diff[i]){
+    per = per
+   }else{
+    per = per+1
+  }
+  
+  period[i+1]= per
+  
+
+  }
+ period_all[inter] =period
+ inter = inter+66
+}
+options(dplyr.summarise.inform = FALSE)
+final_df = test_df %>%
+  ungroup() %>% 
+  mutate(periodo = period_all*sig_diff) %>% 
+  group_by(subject, wm, periodo) %>%
+  filter(periodo !=0) %>% 
+  mutate(per_name = paste0("(",min(dap)," to ", max(dap), " dap)")) %>%
+  group_by(subject,per_name, wm) %>%
+  summarise(x = mean(value)) %>%
+  pivot_wider(values_from = `x`,
+              names_from = per_name, 
+              names_prefix = paste(variable," "))
+
+return(final_df)
+
+}
+
+data_fda_list = lapply(var_names,define_interval, data =  white_load_fda)
+merged_fda =  Reduce(function(...) merge(..., all=T), data_fda_list) 
+```
+
+### Soil data
+
+
+```{r}
+soil_df_load =read.csv("data_white-mold/extracted_soil_data.csv") %>% 
+  dplyr::select(-longitude, -latitude)
+```
+
+-   Centered log-ratio transformation for sand, silt, and clay
+
+```{r}
+soil_comp = as.matrix(soil_df_load[c("clay","sand","silt")])
+
+log_sand_clay = log(soil_comp[,"sand"]/soil_comp[,"clay"])
+log_silt_clay = log(soil_comp[,"silt"]/soil_comp[,"clay"])
+
+texture =  data.frame(log_sand_clay, log_silt_clay)
+```
+
+
+```{r}
+soil_df_load %>% 
+  bind_cols(texture) %>% 
+  filter(clay<30) %>% 
+  ggplot(aes(clay,log_silt_clay , color =silt))+
+  geom_point()+
+  geom_hline(yintercept = c(1.1,1.3))+
+  scale_color_gradient(low ="#1e88e5ff",
+                       high = "#ff0d57ff",
+                       n.breaks = 5,
+                       guide = guide_colorbar(barwidth = 10,
+                                              barheight = 0.3))+
+  labs(color = "Silt (%)",
+       y = "log(Silt/Clay)",
+       x = "Clay (%)")+
+  theme(legend.position = "top")+
+  
+
+
+
+soil_df_load %>% 
+  bind_cols(texture) %>% 
+  filter(clay<30) %>% 
+  ggplot(aes(clay,log_sand_clay , color =sand))+
+  geom_point()+
+  scale_color_gradient(low ="#1e88e5ff",
+                       high = "#ff0d57ff",
+                       n.breaks = 5,
+                       guide = guide_colorbar(barwidth = 10,
+                                              barheight = 0.3))+
+  labs(color = "Sand (%)",
+       y = "log(Sand/Clay)",
+       x = "Clay (%)")+
+  theme(legend.position = "top")+
+  
+  plot_annotation(tag_levels = "A")
+  
+```
+
+
+
+
+```{r}
+soil_df = soil_df_load %>% 
+  dplyr::select(-sand, -silt, -clay) %>% 
+  bind_cols(texture)
+
+```
+
+
+
+```{r}
+tidy_soil_df = soil_df %>% 
+  full_join(merged_fda[c("subject", "wm")]) %>% 
+  filter(!is.na(wm)) %>% 
+  dplyr::select(-subject, -hb,-n, -alpha,-lambda, -ksat) %>%  
+  pivot_longer(1:7, 
+               names_to = "variable",
+               values_to = "values") %>%
+  mutate(variable = case_when(variable == "theta_r" ~ "Residual soil water content (m³/m³)",
+                              variable == "theta_s" ~ "Saturated soil water content (m³/m³)",
+                              variable == "om" ~ "Soil organic matter (%)",
+                              variable == "ph" ~ "Soil pH",
+                              variable == "bd" ~ "Soil bulk density g/cm³",
+                              variable == "log_sand_clay" ~ "log(Sand/Clay)",
+                              variable == "log_silt_clay" ~ "log(Silt/Clay)"))
+```
+
+
+```{r}
+tidy_soil_df %>% 
+  ggplot(aes(as.factor(wm), values, color = values))+
+  ggforce::geom_sina(
+    alpha = 0.8,
+    color = "gray",
+    maxwidth =0.5
+    )+
+  geom_boxplot(
+    fill = NA,
+    outlier.colour = NA,
+    width =0.5,
+    color = "black"
+    )+
+  facet_rep_wrap(
+    ~variable,
+    scales = "free_y",
+    ncol = 2,
+    strip.position = "left",
+    labeller = label_wrap_gen(width=20)
+    )+
+  scale_x_discrete(labels = c("1" = "Prevalent",
+                              "0" = "Non-prevalent" ))+
+  labs(x = "White mold prevalence",
+       y = "")+
+  theme(
+    strip.background = element_blank(),
+    strip.placement = "outside",
+    axis.text = element_text(size=7)
+    )
+
+
+# ggsave("figs/xboost_figs/soil_data.png", dpi = 900, height = 7, width = 6, bg = "white")  
+```
+
+
+
+<!-- ```{r} -->
+<!-- soil_df_selec= soil_df %>%  -->
+<!--   dplyr::select(-subject, -hb,-n, -alpha,-lambda, -ksat)  -->
+
+<!-- corr <- round(cor(soil_df_selec), 1) -->
+<!-- p.mat <- ggcorrplot::cor_pmat(soil_df_selec) -->
+
+<!-- ggcorrplot::ggcorrplot(corr,  -->
+<!--                        hc.order = TRUE, -->
+<!--                        type = "lower", -->
+<!--                        p.mat = p.mat, -->
+<!--                        lab = TRUE) -->
+<!-- ``` -->
+
+
+
+### Data from original dataset
+
+```{r}
+wm_original = wm_data %>% 
+  group_by(subject) %>% 
+  summarise(elevation = unique(elevation),
+            `Planting date` = format(mean(planting.date), "%j"))
+```
+
+
+
+
+
+
+
+### Fusioning datasets
+
+```{r}
+ml_data_fda =soil_df %>%
+  full_join(merged_fda) %>% 
+  full_join(wm_original) %>% 
+  filter(!is.na(wm)) %>% 
+  mutate(wm= factor(wm, levels =c("1", "0")),
+         `Planting date` = as.numeric(`Planting date`)) %>%
+  ungroup() %>% 
+  dplyr::select(-subject, -hb,-n, -alpha,-lambda, -ksat) %>% 
+  relocate(wm)
+
+
+write.csv(ml_data_fda, "data_white-mold/data_tidy_xgboost.csv", row.names = F)
+```
+
+## XGboost modeling
+
+-   setting up parallel computation
+
+```{r}
+library(parallel)
+all_cores <- parallel::detectCores(logical = FALSE)
+registerDoParallel(cores = all_cores)
+```
+
+-   Preprocessing
+
+```{r}
+preprocessing_recipe <- 
+  recipes::recipe(wm ~ ., data = ml_data_fda) %>%
+  # convert categorical variables to factors
+  recipes::step_string2factor(all_nominal()) %>%
+  # combine low frequency factor levels
+  recipes::step_other(all_nominal(), threshold = 0.01) %>%
+  # remove no variance predictors which provide no predictive information 
+  recipes::step_nzv(all_nominal()) %>%
+  prep()
+```
+
+-   Splitting for Cross Validation
+
+```{r}
+ames_cv_folds <- 
+  recipes::bake(
+    preprocessing_recipe, 
+    new_data = ml_data_fda#training(wm_split)
+  ) %>%  
+  rsample::vfold_cv(v = 5)
+```
+
+-   XGBoost Model Specification
+
+```{r}
+xgboost_model <- 
+  parsnip::boost_tree(
+    mode = "classification",
+    trees = 5000,
+    min_n = tune(),
+    tree_depth = tune(),
+    mtry = tune(),#<<<<<<<<<
+    learn_rate = tune(),
+    loss_reduction = tune()
+  ) %>%
+    set_engine("xgboost")
+```
+
+-   Grid Specification
+
+```{r}
+xgboost_params <- 
+  dials::parameters(
+    min_n(),
+    finalize(mtry(), ml_data_fda),#<<<<<<<<<
+    tree_depth(range = c(1L, 5L)),
+    learn_rate(),
+    loss_reduction()
+  )
+set.seed(1)
+
+xgboost_grid <- 
+  dials::grid_max_entropy(
+    xgboost_params, 
+    size = 60
+  )
+head(xgboost_grid)
+```
+
+-   Define the Workflow
+
+```{r}
+xgboost_wf <- 
+  workflows::workflow() %>%
+  add_model(xgboost_model) %>% 
+  add_formula(wm ~ .)
+```
+
+### Tune the Model
+
+[metrics](https://yardstick.tidymodels.org/articles/metric-types.html)
+
+```{r eval=FALSE, include=T}
+xgboost_tuned_fda <- tune::tune_grid(
+  object = xgboost_wf,
+  resamples = ames_cv_folds,
+  grid = xgboost_grid,
+  metrics = yardstick::metric_set(recall, precision, f_meas,accuracy, kap,roc_auc, sens, spec,mn_log_loss),
+  control = tune::control_grid(verbose = TRUE, save_pred = TRUE)
+)
+# ml_data
+saveRDS(xgboost_tuned_fda, "xgboost/tuned_grid_fda.RDS")
+```
+
+```{r include=FALSE}
+xgboost_tuned_fda = readRDS("xgboost/tuned_grid_fda.RDS")
+```
+
+```{r}
+xgboost_tuned_fda %>% 
+  collect_metrics()%>%
+  filter(.metric == "accuracy") %>%
+  dplyr::select(mean, mtry:loss_reduction) %>%
+  pivot_longer(mtry:loss_reduction,
+               values_to = "value",
+               names_to = "parameter"
+  ) %>%
+  ggplot(aes(value, mean, color = parameter)) +
+  geom_point(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(~parameter, scales = "free_x") +
+  labs(x = NULL, y = "accuracy")
+```
+
+### Best model
+
+```{r}
+xgboost_best_params <- xgboost_tuned_fda %>% 
+  tune::select_best(metric = "mn_log_loss")
+
+xgboost_tuned_fda %>% 
+  collect_metrics(summarise = TRUE) %>%
+  filter(.config == xgboost_best_params$.config)
+```
+
+
+-   Run best model
+
+```{r}
+
+xgboost_model_final <- xgboost_model %>% 
+  finalize_model(xgboost_best_params)
+xgboost_model_final
+
+```
+
+```{r}
+train_processed <- bake(preprocessing_recipe,  new_data = ml_data_fda)
+set.seed(1)
+trained_model =  xgboost_model_final %>%
+  # fit the model on all the training data
+  fit(
+    formula = wm ~ ., 
+    data    = train_processed
+  )
+```
+
+-   Check the best cuting point
+
+```{r}
+test_cut_point= function(P_cut){
+ # P_cut = 0.90 
+accuracy_df = trained_model %>% 
+  predict(new_data = train_processed, type = c("prob")) %>%
+  mutate(.pred_class = factor(ifelse(.pred_1>P_cut, 1, 0), levels = c("1","0"))) %>%
+  dplyr::select(-.pred_0,-.pred_1) %>%
+  bind_cols(ml_data_fda) %>%
+  yardstick::accuracy(truth = wm, .pred_class) %>% 
+  mutate(cut_point = P_cut)
+return(accuracy_df)
+}
+cut_point_df = bind_rows(lapply(X = seq(0.05,0.85, by =0.01), test_cut_point)) 
+
+max_accuracy_point = cut_point_df %>% 
+  filter(.estimate == max(.estimate))
+max_accuracy_point
+```
+
+```{r}
+cut_point_df%>% 
+  ggplot(aes(cut_point, .estimate))+
+  geom_line()+
+  geom_vline(xintercept = max_accuracy_point$cut_point[1])
+```
+
+```{r}
+# predict for the training data
+train_prediction1 <- trained_model %>% 
+  predict(new_data = train_processed, type = c("prob")) %>%
+  # mutate(.pred_class = as.factor(ifelse(.pred_1>max_accuracy_point$cut_point[1], 1, 0))) %>%
+    mutate(.pred_class = factor(ifelse(.pred_1>max_accuracy_point$cut_point[1], 1, 0), levels = c("1","0"))) %>%
+
+  dplyr::select(-.pred_0,-.pred_1) %>%
+  bind_cols(ml_data_fda)
+
+xgboost_score_train1 <- train_prediction1 %>%
+  yardstick::metrics(truth = wm, .pred_class, options = list(accuracy(), kap(), roc_auc())) #%>%
+  # mutate(.estimate = format(round(.estimate, 2), big.mark = ","))
+xgboost_score_train1
+# trained_model$spec
+
+```
+
+#### .Confusion matrix
+
+```{r}
+train_prediction1 %>% 
+  conf_mat(wm, .pred_class) %>% 
+  autoplot(type = "heatmap")
+
+# train_prediction1 %>% 
+  
+```
+
+#### .Roc curve
+
+```{r}
+train_prediction2 <- trained_model %>% 
+  predict(new_data = train_processed, type = c("prob")) %>%
+  bind_cols(ml_data_fda)
+
+train_prediction2 %>% 
+  roc_curve(wm, .pred_1) %>% 
+  autoplot()
+```
+
+#### .metrics
+
+```{r}
+bind_rows(
+  xgboost_score_train1,
+train_prediction1 %>% 
+  sens(wm, .pred_class),
+train_prediction1 %>% 
+  spec(wm, .pred_class),
+train_prediction1 %>% 
+  precision(wm, .pred_class),
+train_prediction2 %>% 
+  roc_auc(wm, .pred_1),
+train_prediction2 %>% 
+  mn_log_loss(wm, .pred_1)
+)
+
+# recall, precision, f_meas,accuracy, kap,roc_auc, sens, spec
+
+```
+
+```{r}
+trained_model2 = trained_model
+# aaaa$data %>% 
+xx = trained_model$fit$feature_names
+trained_model2$fit$feature_names = str_replace(str_replace(xx , "`", ""), "`", "")
+# trained_model2$fit$feature_names
+```
+
+### Relative importance
+
+```{r}
+
+aaaa = trained_model2 %>% 
+  vip(geom = "col", num_features = 30)
+
+vip_fda = aaaa$data %>% 
+  mutate(Variable = str_replace(Variable, "`", ""),
+         Variable = str_replace(Variable, "`", ""))
+
+as.data.frame(vip_fda) %>% 
+  arrange(-Importance) %>%
+  mutate(nr = 1:nrow(vip_fda)) %>% 
+  filter(nr <= 10) %>% 
+  summarise(sum(Importance))
+
+
+var_names12 = vip_fda[1:9,]$Variable
+```
+
+```{r}
+aaaa$data %>% 
+  mutate(Variable = case_when(Variable == "theta_r" ~ "Residual soil water content",
+                              Variable == "theta_s" ~ "Saturated soil water content",
+                              Variable == "om" ~ "Soil organic matter",
+                              Variable == "ph" ~ "Soil pH",
+                              Variable == "bd" ~ "Soil bulk density",
+                              Variable == "log_sand_clay" ~ "log(Sand/Clay)",
+                              # Variable == "clay" ~ "Clay",
+                              Variable == "log_silt_clay" ~ "log(Silt/Clay)",
+                              Variable == "elevation" ~ "Elevation",
+                              TRUE ~ Variable)) %>% 
+  arrange(-Importance)  %>%
+  mutate(nr = 1:nrow(vip_fda)) %>% 
+  # filter(nr <= 20) %>%
+  mutate(Variable = str_replace(Variable, "  ", " ")) %>% 
+  ggplot(aes(Importance*100, reorder(Variable,Importance), fill =Importance))+
+  geom_errorbar(aes(xmin = 0, xmax = Importance*100), width = 0)+
+  geom_point(size = 3, shape =21)+
+  scale_fill_viridis_c()+
+  scale_color_viridis_c()+
+  theme(legend.position = "none")+
+  labs(x = "Relative importance (%)",
+       y = "" )
+# ggsave("figs/xboost_figs/importance_fda.png", width = 6,height =6, bg = "white")
+
+  
+
+```
+
+### Centered ICE curves
+
+[about ice curve](https://christophm.github.io/interpretable-ml-book/ice.html)
+
+```{r}
+influence_plot = function(var){
+
+if(var == "om"){
+  var1 = "Soil organic matter" 
+}else if(var == "theta_r"){
+    var1 = "Residual soil water content"
+    }else if(var =="log_silt_clay" ){
+      var1 = "log(Silt/Clay)"
+  }else{var1 = var}  
+  
+plot_i = pdp::partial(trained_model2$fit,
+             pred.var = var,#var[i],
+             train =  subset(ml_data_fda, select = -wm),
+             type = "classification",
+             which.class =1L,
+             plot = TRUE,
+             prob =T,
+             alpha = 1,
+             plot.engine = "ggplot2")+
+  geom_smooth(se = F, color = "darkred", method = "gam", formula = y ~ s(x, bs = "cs"))+
+  labs(y = "Probability",
+       x = paste(var1))
+
+return(plot_i)
+}
+
+```
+
+```{r fig.height=8, fig.width=10, message=FALSE, warning=FALSE}
+do.call(patchwork::wrap_plots, lapply(var_names12[1:9],influence_plot))+
+  plot_layout(ncol = 3)+
+  plot_annotation(tag_levels = "A")
+# ggsave("figs/xboost_figs/partial_fda.png", width = 9,height =8, bg = "white")
+```
+
+### SHAP values
+
+-   Finalize workflow
+
+```{r}
+
+split_data = make_splits(ml_data_fda,
+            assessment = ml_data_fda)
+
+registerDoParallel(cores = 1)
+
+set.seed(1)
+final_xgb <- finalize_workflow( xgboost_wf, xgboost_best_params) %>% 
+  last_fit(split_data, 
+           metrics = metric_set(accuracy, roc_auc, mn_log_loss, pr_auc, f_meas, precision, recall))
+final_xgb$.metrics
+
+```
+
+
+Useful sources : [link 1](https://juliasilge.com/blog/xgboost-tune-volleyball/) and [link 2](https://liuyanguu.github.io/post/2019/07/18/visualization-of-shap-for-xgboost/)
+
+```{r}
+set.seed(1)
+fitted_data <- preprocessing_recipe %>%
+  prep() %>%
+  bake(new_data = ml_data_fda) %>%
+  dplyr::select(-wm)
+# set.seed(1)
+xgb_model_extrac = extract_fit_engine(final_xgb)
+shap_data = fitted_data %>% as.matrix()
+colnames(shap_data) = xgb_model_extrac$feature_names
+# set.seed(1)
+shap_long = shap.prep(xgb_model = extract_fit_engine(final_xgb),
+                      X_train = shap_data)
+# set.seed(1)
+shap_values = shap.values(xgb_model = extract_fit_engine(final_xgb),
+                      X_train = shap_data)
+
+#plot
+shap.plot.summary(data_long = shap_long,
+                  scientific = F)
+
+
+
+```
+
+```{r}
+shap_long_tidy = shap_long %>% 
+  mutate(variable = as.character(variable)) %>% 
+  mutate(variable = case_when(variable == "theta_r" ~ "Residual soil water content",
+                              variable == "theta_s" ~ "Saturated soil water content",
+                              variable == "om" ~ "Soil organic matter",
+                              variable == "ph" ~ "Soil pH",
+                              variable == "bd" ~ "Soil bulk density",
+                              variable == "log_sand_clay" ~ "log(Sand/Clay)",
+                              # Variable == "clay" ~ "Clay",
+                              variable == "log_silt_clay" ~ "log(Silt/Clay)",
+                              variable == "elevation" ~ "Elevation",
+                              TRUE ~ variable)) %>% 
+  mutate(variable = str_replace(variable, "`", ""),
+         variable = str_replace(variable, "`", ""),
+         variable = str_replace(variable, "  ", " ")) %>% 
+  mutate(variable= as.factor(variable))
+```
+
+#### SHAP summary plot
+
+```{r fig.height=6, fig.width=8}
+#graph1
+shap_long_tidy %>% 
+  ggplot(aes(mean_value,reorder(variable, mean_value), color = mean_value))+
+  geom_errorbar(aes(xmin = 0, xmax = mean_value),
+                width = 0)+
+  geom_point( size= 2)+
+  scale_color_gradient(low ="#1e88e5ff", high = "#ff0d57ff",limits =c(0,1),
+                       breaks = c(0, 1), labels = c(" Low", "High "))+
+  background_grid(major = c("y"), size.major = 0.2)+
+  labs(x = "Mean(|SHAP value|)",
+       y ="",
+       color = 'Predictor value',
+       subtitle = "Global predictor importance")+
+  # scale_x_continuous(limits =c(0,0.5))+
+  
+  
+#graph2
+shap_long_tidy %>% 
+  mutate(variable = str_replace(variable, "`", ""),
+         variable = str_replace(variable, "`", "")) %>% 
+  ggplot(aes(value, reorder(variable, mean_value), color = stdfvalue))+
+  geom_vline(xintercept = 0, linetype =2) +
+  geom_jitter(height = 0.2)+
+  scale_color_gradient(low ="#1e88e5ff", high = "#ff0d57ff",limits =c(0,1),
+                       breaks = c(0, 1), labels = c(" Low", "High "))+
+  labs(x = "SHAP value (impact on model output)",
+       y = "",
+       color = 'Predictor value',
+       subtitle = "Local explanation summary")+
+  scale_x_continuous(breaks = seq(-3, 3,0.5 ))+
+  background_grid(major = c("y"), size.major = 0.2)+
+  theme(axis.text.y = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        plot.subtitle = element_text(hjust = 0.6))+
+  
+  #patchwork
+  
+  plot_layout(guides = "collect",widths = c(1,1.5) )+
+  plot_annotation(tag_levels = "A")
+  
+ggsave("figs/xboost_figs/SHAP_values.png",height = 6, width = 12, dpi=600, bg = "white")
+```
+
+#### SHAP Dependence plots
+
+```{r message=FALSE, warning=FALSE, fig.height=10, fig.width=12}
+# do.call(patchwork::wrap_plots, lapply(var_names12[1:9],influence_plot))+
+shap_vars =  as.character(unique(shap_long_tidy$variable))
+
+
+do.call(patchwork::wrap_plots,
+        lapply(1:10, 
+               function(i){
+                 shap.plot.dependence(data_long = shap_long_tidy,
+                                      x = shap_vars[i],
+                                      smooth = F,
+                                      color_feature = "auto")+
+                   geom_smooth(se = F,
+                               color = "black",
+                               method = "gam",
+                               formula = y ~ s(x, bs = "cs", k = 15))+
+                   theme_half_open(font_size = 10)+
+                   scale_color_gradient(low ="#1e88e5ff",
+                                        high = "#ff0d57ff",
+                                        n.breaks = 5,
+                                        guide = guide_colorbar(barwidth = 5,
+                                                               barheight = 0.3))+
+                   labs(title = paste(shap_vars[i]),
+                        y = paste0("SHAP value for\n", shap_vars[i]))+
+                   scale_x_continuous(n.breaks = 6)+
+                   # scale_y_continuous(limits = c(-1.5, 1.5))+
+                   theme(legend.position = "top",
+                         legend.text = element_text(size=5, angle = 25),
+                         legend.title = element_text(size=7))
+                 }
+               )
+)+
+  plot_layout(ncol = 2)+
+  plot_annotation(tag_levels = "A")
+ggsave("figs/xboost_figs/shap_dependence.png", dpi = 900, height = 11, width = 7,bg="white")
+
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.height=10, fig.width=12}
+
+do.call(patchwork::wrap_plots,
+        lapply(11:length(shap_vars), 
+               function(i){
+                 shap.plot.dependence(data_long = shap_long_tidy,
+                                      x = shap_vars[i],
+                                      smooth = F,
+                                      color_feature = "auto")+
+                   geom_smooth(se = F,
+                               color = "black",
+                               method = "gam",
+                               formula = y ~ s(x, bs = "cs", k = 15))+
+                   theme_half_open(font_size = 10)+
+                   scale_color_gradient(low ="#1e88e5ff",
+                                        high = "#ff0d57ff",
+                                        n.breaks = 5,
+                                        guide = guide_colorbar(barwidth = 5,
+                                                               barheight = 0.3))+
+                   labs(title = paste(shap_vars[i]),
+                        y = paste0("SHAP value for\n", shap_vars[i]))+
+                   theme(legend.position = "top",
+                         axis.title.y = element_text(), 
+                         legend.text = element_text(size=6, angle = 25),
+                         legend.title = element_text(size=7))
+                 }
+               )
+)+
+  plot_layout(ncol = 4)+
+  plot_annotation(tag_levels = "A")
+
+ggsave("figs/xboost_figs/shap_dependence_remainig.png", dpi = 600, height = 15, width = 15,bg="white")
+```
+
+
+
+
+<!-- ```{r} -->
+
+<!-- plot_data <- shap.prep.stack.data(shap_contrib = shap_values$shap_score, top_n = 10, n_groups = 2) -->
+
+<!-- shap.plot.force_plot(plot_data,  -->
+
+<!--                      zoom_in_group = 2) -->
+
+<!-- ``` -->
+
+```{r include=FALSE}
+file = "code_boosting_white-mold_files/desktop.ini"
+if (file.exists(file)) {
+ unlink(file)
+ cat("The file is deleted")
+}
+```

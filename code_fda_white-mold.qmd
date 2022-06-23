@@ -1,0 +1,383 @@
+---
+title: Functional data analysis
+---
+
+# Functional data analysis
+
+## Libraries
+
+::: callout-warning
+# About R packages
+
+Make sure to have all R packages installed before running the analysis described in this website.
+:::
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(cowplot)
+library(lemon)
+library(ggthemes)
+library(patchwork)
+library(mgcv)
+library(mgcViz)
+library(itsadug)
+library(tidymv)
+theme_set(theme_half_open(font_size = 12))
+```
+
+```{r eval=TRUE, include=FALSE}
+library(knitr)
+
+knit_print.data.frame <- function (x, options, ...) {
+  rmarkdown::paged_table(x, options) %>% 
+    rmarkdown:::print.paged_df()
+}
+
+registerS3method("knit_print", "data.frame", knit_print.data.frame)
+```
+
+# Load Data
+
+```{r}
+wm_load = read.csv("data_white-mold/data_model_plus_weather_filtered.csv")
+head(wm_load)
+
+```
+
+```{r}
+wm_datax = wm_load %>%
+  #transform these columns into Date format
+  mutate(date = as.Date(date),
+         sampling.date =  as.Date(sampling.date),
+         planting.date = as.Date(planting.date)) %>% 
+  
+  # Calculate dap
+  mutate(dap = date-planting.date) %>% 
+  
+  # Calculating temperatures in degrees Celsius 
+  mutate(d2m = d2m-273.15,
+         t2m_mean = t2m_mean-273.15,
+         t2m_max = t2m_max-273.15,
+         t2m_min = t2m_min-273.15,
+         st = st-273.15) %>% 
+  # dewpoint depression
+  mutate(dpd = t2m_mean - d2m) %>% 
+  # growing degree days (base 0)
+  mutate(gddi = ((t2m_max +t2m_min)*0.5)-0) %>% 
+  group_by(subject) %>% 
+  mutate(gdd = cumsum(gddi)) %>% 
+  
+  group_by(subject) %>% 
+  mutate(wm = (mean(wm, na.rm =T)>0)*1) %>% 
+  ungroup() %>% 
+  filter(!is.na(wm)) 
+
+  
+wm_datax
+
+```
+
+```{r}
+wm_datax %>% 
+  filter(!is.na(wm)) %>% 
+  group_by(subject) %>% 
+  group_by(subject, dap) %>% 
+  slice(1L) %>% 
+  mutate(S = wm) %>% 
+  filter(dap<=50) %>% 
+  group_by(subject) %>% 
+  summarise(max_dap = max(dap)) %>% 
+  arrange(max_dap)
+```
+
+```{r}
+wm_datax %>% 
+  group_by(subject) %>% 
+  summarise(dap = as.numeric(max(dap))) %>% 
+  ungroup() %>% 
+  summary()
+  # ggplot(aes(dap))+
+  # geom_density()+
+  # theme(axis.text.y = element_blank())
+```
+
+```{r}
+wm_datax %>% 
+  filter(!is.na(gscat)) %>% 
+  group_by(subject, gscat) %>% 
+  summarise(dap = max(dap)) %>% 
+  ggplot(aes(dap, reorder(gscat, dap), fill= gscat))+
+  ggdist::stat_halfeye()+
+  scale_fill_calc()+
+  background_grid(size.major = 0.1)+
+  scale_x_continuous(breaks = seq(15, 80, 5))+
+  labs(x =  "Days after planting",
+       y = "Phenological state",
+       fill = "")
+ggsave("figs/fda_figs/phonology.png", dpi=900, height = 3,width = 6,bg= "white" )
+```
+
+```{r}
+wm_data = wm_datax%>% 
+  group_by(subject) %>% 
+  filter(sampling.date == max(sampling.date))
+
+wm_data %>% 
+  group_by(subject) %>% 
+  summarise(j = sampling.date == max(date)) %>% 
+  ungroup() %>% 
+  filter(j ==F)
+```
+
+```{r}
+wm_data %>% 
+  group_by(subject) %>% 
+  filter(`obs` == max(`obs`)) %>% 
+  summarise((wm))
+```
+
+## Generalized additive models (GAM)
+
+### Example for RH
+
+-   Filtering data for until 60 days post planting
+
+```{r}
+gam_data = wm_data %>%
+  mutate(dap =as.numeric(dap),
+         wm = as.factor(wm)) %>% 
+  filter(dap<=60)
+```
+
+#### Mixed-effect GAM model
+
+```{r}
+gam_mtemp = gam(rh ~ wm +s(dap, by =wm, bs = "bs", m=4, k =17 )+ s(subject, bs="re") + s(subject,dap, bs = "re"),
+                method = "REML",
+                 data = gam_data )
+
+summary(gam_mtemp)
+```
+
+#### Predicting curves
+
+```{r}
+
+predict_gam(gam_mtemp ,
+            exclude_terms = list("s(subject)", "s(subject,dap)" ),
+            values = list(subject = NULL)) %>%
+  # filter(subject == 1)+
+  ggplot(aes(dap,fit, color = wm, fill = wm))+
+  annotate("rect",ymin = -Inf, ymax = Inf, xmin = 35, xmax = 50, fill = "steelblue", alpha = 0.2)+
+  geom_vline(xintercept = 0, color = "gray", linetype = "dashed")+
+  geom_ribbon(aes( ymin= fit - 1.96*se.fit, ymax = fit + 1.96*se.fit),
+              linetype =0, 
+              alpha = 0.1)+
+  geom_line(size = 1 )+
+  scale_x_continuous(breaks = seq(-30, 70, by =10))+
+  scale_color_colorblind(labels = c( "Non-prevalent","Prevalent"))+
+  scale_fill_colorblind(labels = c( "Non-prevalent","Prevalent"))+
+  labs(x = "Days relative to planting date",
+       fill = "",
+       color ="")+
+  theme(legend.position = "top")
+```
+
+#### Get differences
+
+```{r}
+gg_temp_diff= get_smooths_difference(gam_mtemp, dap, list(wm = c("1", "0")), series_length = 500)
+
+
+
+gg_temp_diff %>%
+  ggplot(aes(dap, difference, group = group))+
+  annotate("rect",ymin = -Inf, ymax = Inf, xmin = 35, xmax = 50, fill = "steelblue", alpha = 0.2)+
+  
+  geom_vline(xintercept = 0, color = "gray", linetype = "dashed")+
+  geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper, fill = sig_diff), alpha = 1)+
+  geom_line(size =1, color = "white")+
+  geom_hline(yintercept = 0, color = "gray", linetype = "dashed")+
+  # scale_fill_colorblind()+
+  scale_fill_manual(values = c("black", "red"))+
+  scale_x_continuous(breaks = seq(-30, 70, by =10))+
+  labs(x = "Days relative to planting date",
+       y = "Difference",
+       fill = "",
+       color ="")
+ 
+# ggsave("figs/diff_gam.png", dpi = 600, width = 6, height = 3, bg = "white") 
+```
+
+## All variables
+
+Defining variable names for graphs
+
+```{r}
+vars = c("d2m", "t2m_mean" ,"t2m_max" , "t2m_min" ,"st","sm" ,"sp" ,"rh" )
+
+var_fulnames = c("Dew point (°C)","Mean temperature (°C)", "Max. temperature (°C)","Min. temperature (°C)","Soil temperature (°C)","Soil Moisture (m³/m³)", "Surface pressure (Pa)","Relative Humidity (%)")
+
+# "gdd","Growing degree days",
+```
+
+This is a function we built for fitting the GAM model for each variable. Then we use the `lapply()` function to run it to all variables and store into a `list` object.
+
+```{r}
+glmvars = function(var, data){
+  
+form =   as.formula(
+  paste(var,"~wm +s(dap, by =wm, bs = 'bs', m=4, k =17 )+ s(subject, bs='re') + s(subject,dap, bs = 're')")
+  )
+gam_model = gam(form,
+                 # random = list(subject=~1),
+                method = "REML",
+                 data = data ) 
+
+return(gam_model)
+ 
+}
+
+gam_list = lapply(vars,glmvars, gam_data )
+names(gam_list) = vars
+```
+
+### Predicted curves
+
+This function was designed to plot the predicted smooth curves for each variable.
+
+```{r}
+plot_curves_fda = function(i, model, var){
+  predict_gam(model[[i]] ,
+            exclude_terms = list("s(subject)", "s(subject,dap)" ),
+            values = list(subject = NULL)) %>%
+  # filter(subject == 1)+
+  ggplot(aes(dap,fit, color = wm, fill = wm))+
+  annotate("rect",ymin = -Inf, ymax = Inf, xmin = 35, xmax = 50, fill = "#ce9ea1", alpha = 0.3)+
+  geom_vline(xintercept = 0, color = "black", linetype = "dashed", size = 0.2)+
+  geom_ribbon(aes( ymin= fit - 1.96*se.fit, ymax = fit + 1.96*se.fit),
+              linetype =0, 
+              alpha = 0.5)+
+  geom_line(size = .8)+
+  scale_color_colorblind(labels = c( "Non-prevalent","Prevalent"))+
+  scale_fill_colorblind(labels = c( "Non-prevalent","Prevalent"))+
+  scale_x_continuous(breaks = seq(-30, 60, by =15))+
+  scale_y_continuous(n.breaks = 5)+
+  labs(x = "Days relative to planting date",
+       y = paste(var[i]),
+       fill = "",
+       color ="",
+       title = paste(var[i]))+
+  theme(legend.position = "top")
+}
+X =1:length(vars)
+```
+
+##### Visualization
+
+Here we plot all the curves in a combo figure
+
+```{r}
+do.call(patchwork::wrap_plots,
+        lapply(X, plot_curves_fda, model = gam_list, var = var_fulnames))+
+  plot_layout(guides = "collect",
+              ncol = 2)+
+  plot_annotation(tag_levels = "A")&
+  theme(axis.text = element_text(size=6),
+        axis.title = element_text(size=6),
+        plot.title = element_text(size=7),
+        legend.position = "bottom")
+
+#save figure
+ggsave("figs/fda_figs/curves_gam_fda.png", dpi = 600,  width = 5, height = 6, bg = "white") 
+
+```
+
+#### Difference curves
+
+This function get the difference between smooth curves and plot using `ggplot2()`.
+
+```{r}
+ggplot_diff = function(i, model, var){
+  
+ggdiff = get_smooths_difference(model[[i]], dap, list(wm = c("1", "0")),series_length = 1500)
+
+ggdiff %>%
+  ggplot(aes(dap, difference))+
+  annotate("rect",ymin = -Inf, ymax = Inf, xmin = 35, xmax = 50, fill = "#ce9ea1", alpha = 0.3)+
+  geom_vline(xintercept = 0, color = "black", linetype = "dashed", size = 0.2)+
+  geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper, fill = sig_diff, group = group), alpha = 1)+
+  geom_line(size =0.5, color = "white")+
+  geom_hline(yintercept = 0, color = "black", linetype = "dashed", size = 0.2)+
+  scale_fill_manual(values = c("FALSE" = "#707181",
+                              "TRUE" = "steelblue"))+##cd2b2d
+  scale_x_continuous(breaks = seq(-30, 60, by =15))+
+  labs(x = "Days relative to planting date",
+       y = "Difference",
+       title = var[[i]],
+       fill = "Sig. Diff.",
+       color ="")+
+  theme(plot.title = element_text(size = 12))
+
+}
+X =1:length(vars)
+
+```
+
+##### Visualization
+
+```{r fig.height=8, fig.width=6}
+do.call(patchwork::wrap_plots,
+        lapply(X, ggplot_diff, model = gam_list, var = var_fulnames))+
+  plot_layout(guides = "collect",
+              ncol = 2)+
+  plot_annotation(tag_levels = "A")&
+  theme(axis.text = element_text(size=7),
+        axis.title = element_text(size=6),
+        plot.title = element_text(size=9),
+        legend.position = "bottom")
+
+# save figure
+ggsave("figs/fda_figs/diff_gam.png", dpi = 900, width = 5, height = 6, bg = "white") 
+
+```
+
+## Saving data
+
+This function store the difference values into a `data.frame`. We use the `lapply()` function to get the difference for the selected variables
+
+```{r}
+diff_fun = function(i, model, var){
+ difs =  get_smooths_difference(model[[i]], dap, list(wm = c("1", "0")), series_length = 91) %>% 
+    mutate(var = var[[i]])
+return(difs)
+}
+
+X =1:length(vars)
+all_diffs = bind_rows(lapply(X, diff_fun, gam_list,var = vars ))
+all_diffs
+```
+
+Here we save (using the `write.csv()` function) the data with the periods in time that we found significant differences between smoothed curves.
+
+```{r eval=FALSE, include=TRUE}
+
+gam_data %>% 
+  dplyr::select(subject, dap, wm, d2m, t2m_mean, t2m_max, t2m_min, sp, sm, st, rh, dpd) %>% 
+  pivot_longer(4:12, 
+               values_to = "value",
+               names_to = "var") %>% 
+  full_join(
+    all_diffs %>%
+      dplyr::select(dap,var, sig_diff)
+  ) %>% 
+  write.csv("data_white-mold/data_fda_sig_diff.csv",row.names = F)
+```
+
+```{r include=FALSE}
+file = "code_fda_white-mold_files/desktop.ini"
+if (file.exists(file)) {
+ unlink(file)
+ cat("The file is deleted")
+}
+```

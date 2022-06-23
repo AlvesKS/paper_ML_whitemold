@@ -1,0 +1,53 @@
+---
+title: "About this study"
+---
+
+## **Data fusion and machine learning for untangling the effects of the environment on plant disease epidemics**
+
+**Kaique S. Alves^1,2^; Denis A. Shah^3^; Helene. R. Dillard^4^; Emerson M. Del Ponte^1^; Sarah J. Pethybridge^2\*^**
+
+> ^**1**^ Departamento de Fitopatologia, Universidade Federal de Viçosa, Viçosa, MG 36570-900, Brazil
+>
+> ^**2**^ Plant Pathology & Plant-Microbe Biology Section, School of Integrative Plant Science, Cornell University, Geneva, NY 14456, USA
+>
+> ^**3**^ Department of Plant Pathology, Kansas State University, Manhattan, KS 66506, USA
+>
+> ^**4**^ College of Agricultural and Environmental Sciences, University of California, Davis, CA 95616, USA
+>
+> \***Corresponding author**: Sarah. J. Pethybridge
+>
+> **Email**: sjp277\@cornell.edu
+
+## Summary
+
+In the study we use the combination of data fusion and machine learning interpretation to gain knowledge about environmental effects on plant diseases. We used as a study case the pathosystem of white mold on snap bean. White mold is a monocyclic plant disease caused by the Ascomycete *Sclerotinia sclerotiorum*, and it has the reputation of being one the most destructive disease around the world.
+
+## Original article
+
+::: {.callout-note appearance="simple"}
+# This repository contains the data and code for our article:
+
+Alves, K.S., Shah, D.A., Dillard, H.R., Del Ponte, E.M., Pethybridge, S.J. (YYYY) Data fusion and machine learning for untangling the effects of the environment on plant disease epidemics.Name of journal/book <https://doi.org/xxx/xxx>
+:::
+
+## Read the Preprint
+
+::: {.callout-note appearance="simple"}
+# Our pre-print is online on the OSF preprint server:
+
+Alves, K.S., Shah, D.A., Dillard, H.R., Del Ponte, E.M., Pethybridge, S.J. (YYYY) Data fusion and machine learning for untangling the effects of the environment on plant disease epidemics. OSF, Accessed 24 Apr 2022. Online at <https://doi.org/xxx/xxx>
+:::
+
+## Research compendium
+
+::: {.callout-note appearance="simple"}
+## Please cite this research compendium as:
+
+Alves, K.S., Shah, D.A., Dillard, H.R., Del Ponte, E.M., Pethybridge, S.J. (2022) Research compendium: Data fusion and machine learning for untangling the effects of the environment on plant disease epidemics. OSF, Accessed 24 Apr 2022. Online at <https://doi.org/10.17605/OSF.IO/V53PY>
+:::
+
+
+
+
+
+
