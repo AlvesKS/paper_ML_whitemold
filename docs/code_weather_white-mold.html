@@ -306,6 +306,19 @@ About R packages
 </section>
 <section id="white-mold-data" class="level2">
 <h2 class="anchored" data-anchor-id="white-mold-data">White mold data</h2>
+<div class="callout-warning callout callout-style-default callout-captioned">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-caption-container flex-fill">
+About the Data
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>In the research <a href="https://osf.io/v53py/" target="_blank">repository</a>, the directories containing the soil, weather, white mold are compressed (<code>data_era5.zip</code>,<code>soil_images.zip</code>, <code>data_white-mold.zip</code>). You should unzip these files in the main directory to be able to reproduce the analysis.</p>
+</div>
+</div>
 <div class="cell">
 <div class="sourceCode" id="cb2"><pre class="sourceCode r cell-code code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>wm_data <span class="ot">=</span> <span class="fu">read.csv</span>(<span class="st">"data_white-mold/WhiteMoldSurveyWrangledData.csv"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
@@ -361,9 +374,9 @@ About R packages
 <span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>             <span class="fu">aes</span>(longitude,latitude, <span class="at">color =</span> wm<span class="sc">&gt;</span><span class="dv">0</span>))<span class="sc">+</span></span>
 <span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_map</span>(<span class="at">xlim =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">80</span>,<span class="sc">-</span><span class="fl">76.7</span>),</span>
 <span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a>            <span class="at">ylim =</span> <span class="fu">c</span>(<span class="fl">41.8</span>, <span class="fl">43.5</span>))<span class="sc">+</span></span>
-<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_brewer</span>(<span class="at">palette =</span> <span class="st">"Greens"</span>)<span class="sc">+</span></span>
-<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_colorblind</span>(<span class="at">labels =</span> <span class="fu">c</span>(<span class="st">"Not-present"</span>, <span class="st">"Present"</span>))<span class="sc">+</span></span>
-<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">guides</span>(<span class="at">color =</span> <span class="fu">guide_legend</span>(<span class="at">override.aes =</span> <span class="fu">list</span>(<span class="at">size=</span><span class="dv">2</span>)),</span>
+<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values =</span> <span class="fu">c</span>(<span class="st">"gray85"</span>, <span class="st">"gray70"</span>))<span class="sc">+</span></span>
+<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_colorblind</span>(<span class="at">labels =</span> <span class="fu">c</span>(<span class="st">"Absent"</span>, <span class="st">"Present"</span>))<span class="sc">+</span></span>
+<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">guides</span>(<span class="at">color =</span> <span class="fu">guide_legend</span>(<span class="at">override.aes =</span> <span class="fu">list</span>(<span class="at">size=</span><span class="dv">3</span>)),</span>
 <span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a>         <span class="at">fill =</span> <span class="st">"none"</span>)<span class="sc">+</span></span>
 <span id="cb7-35"><a href="#cb7-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()<span class="sc">+</span></span>
 <span id="cb7-36"><a href="#cb7-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Longitude"</span>,</span>
@@ -392,23 +405,28 @@ About R packages
 <span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>               <span class="fu">aes</span>(<span class="at">x=</span>long, <span class="at">y =</span> lat, <span class="at">group =</span> group),</span>
 <span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>               <span class="at">fill=</span> <span class="st">"white"</span>,</span>
 <span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>               <span class="at">color =</span> <span class="st">"black"</span>,</span>
-<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>               <span class="at">size =</span><span class="fl">0.3</span>)<span class="sc">+</span></span>
-<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_polygon</span>(<span class="fu">aes</span>(<span class="at">x=</span>long, <span class="at">y =</span> lat, <span class="at">group =</span> group, <span class="at">fill=</span>region2),</span>
-<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>               <span class="co"># fill= "gray90",</span></span>
-<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>               <span class="at">color =</span> <span class="st">"black"</span>,</span>
-<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>               <span class="at">size =</span><span class="fl">0.3</span>)<span class="sc">+</span></span>
-<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">annotate</span>(<span class="st">"rect"</span>, <span class="at">xmin =</span> <span class="sc">-</span><span class="dv">80</span>, <span class="at">xmax =</span> <span class="sc">-</span><span class="fl">76.5</span>,</span>
-<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>                   <span class="at">ymin =</span> <span class="fl">41.8</span>, <span class="at">ymax =</span> <span class="fl">43.5</span>,<span class="at">color =</span> <span class="st">"black"</span>, <span class="at">alpha =</span> <span class="dv">0</span>)<span class="sc">+</span></span>
-<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>  <span class="co"># coord_map(xlim = c(-80,-73),</span></span>
-<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>            <span class="co"># ylim = c(40, 45))+</span></span>
-<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_map</span>()<span class="sc">+</span></span>
-<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>   <span class="fu">scale_fill_brewer</span>(<span class="at">palette =</span> <span class="st">"Greens"</span>)<span class="sc">+</span></span>
-<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_void</span>()<span class="sc">+</span></span>
-<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Longitude"</span>,</span>
-<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a>       <span class="at">y =</span> <span class="st">"Latitude"</span>,</span>
-<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a>       <span class="at">fill =</span> <span class="st">"Climate division"</span>)<span class="sc">+</span></span>
-<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="fu">c</span>(<span class="fl">0.1</span>,<span class="fl">0.8</span>))</span>
-<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a>ny_map</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>               <span class="at">size =</span><span class="fl">0.3</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>               )<span class="sc">+</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_polygon</span>(<span class="fu">aes</span>(<span class="at">x=</span>long, <span class="at">y =</span> lat, <span class="at">group =</span> group, <span class="at">fill=</span>region2),</span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>               <span class="co"># fill= "gray90",</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>               <span class="at">color =</span> <span class="st">"black"</span>,</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>               <span class="at">size =</span><span class="fl">0.3</span>)<span class="sc">+</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">annotate</span>(<span class="st">"rect"</span>, <span class="at">xmin =</span> <span class="sc">-</span><span class="dv">80</span>, <span class="at">xmax =</span> <span class="sc">-</span><span class="fl">76.5</span>,</span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>                   <span class="at">ymin =</span> <span class="fl">41.8</span>, <span class="at">ymax =</span> <span class="fl">43.5</span>,</span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>           <span class="at">color =</span> <span class="st">"black"</span>,</span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>           <span class="at">size =</span> <span class="fl">0.3</span>,</span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>           <span class="at">alpha =</span> <span class="dv">0</span>)<span class="sc">+</span></span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>  <span class="co"># scale_size_manual(values = c(0.1,0.3))+</span></span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a>  <span class="co"># coord_map(xlim = c(-80,-73),</span></span>
+<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a>            <span class="co"># ylim = c(40, 45))+</span></span>
+<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_map</span>()<span class="sc">+</span></span>
+<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a>   <span class="fu">scale_fill_manual</span>(<span class="at">values =</span> <span class="fu">c</span>(<span class="st">"gray85"</span>, <span class="st">"gray70"</span>))<span class="sc">+</span></span>
+<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_void</span>()<span class="sc">+</span></span>
+<span id="cb8-29"><a href="#cb8-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Longitude"</span>,</span>
+<span id="cb8-30"><a href="#cb8-30" aria-hidden="true" tabindex="-1"></a>       <span class="at">y =</span> <span class="st">"Latitude"</span>,</span>
+<span id="cb8-31"><a href="#cb8-31" aria-hidden="true" tabindex="-1"></a>       <span class="at">fill =</span> <span class="st">"Climate division"</span>)<span class="sc">+</span></span>
+<span id="cb8-32"><a href="#cb8-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="fu">c</span>(<span class="fl">0.1</span>,<span class="fl">0.8</span>))</span>
+<span id="cb8-33"><a href="#cb8-33" aria-hidden="true" tabindex="-1"></a>ny_map</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output-display">
 <p><img src="code_weather_white-mold_files/figure-html/unnamed-chunk-6-1.png" class="img-fluid" width="672"></p>
 </div>
@@ -708,7 +726,7 @@ Cannot dissolve</code></pre>
 <pre><code>Commencing Kriging</code></pre>
 </div>
 <div class="cell-output-stderr">
-<pre><code>Kriging of remaining 0 data layers should finish around: 2022-06-22 17:24:26</code></pre>
+<pre><code>Kriging of remaining 0 data layers should finish around: 2022-06-23 14:58:46</code></pre>
 </div>
 <div class="cell-output-stdout">
 <pre><code>
@@ -720,7 +738,7 @@ Cannot dissolve</code></pre>
 <div class="sourceCode" id="cb36"><pre class="sourceCode r cell-code code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>KrigStop <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>() </span>
 <span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>KrigStop<span class="sc">-</span>KrigStart</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output-stdout">
-<pre><code>Time difference of 2.086116 secs</code></pre>
+<pre><code>Time difference of 1.942145 secs</code></pre>
 </div>
 <div class="sourceCode" id="cb38"><pre class="sourceCode r cell-code code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(State_Krig<span class="sc">$</span>Kriging_SE)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output-display">

@@ -281,6 +281,19 @@ About R packages
 <section id="white-mold-data" class="level2">
 <h2 class="anchored" data-anchor-id="white-mold-data">White mold data</h2>
 <p>Loading white mold data. We are going to use the field coordinates (latitude and longitude) to extract the data from the rasters of soil variables.</p>
+<div class="callout-warning callout callout-style-default callout-captioned">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-caption-container flex-fill">
+About the Data
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>In the research <a href="https://osf.io/v53py/" target="_blank">repository</a>, the directories containing the soil, weather, white mold are compressed (<code>data_era5.zip</code>,<code>soil_images.zip</code>, <code>data_white-mold.zip</code>). You should unzip these files in the main directory to be able to reproduce the analysis.</p>
+</div>
+</div>
 <div class="cell">
 <div class="sourceCode" id="cb2"><pre class="sourceCode r cell-code code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>wm_data <span class="ot">=</span> <span class="fu">read.csv</span>(<span class="st">"data_white-mold/WhiteMoldSurveyWrangledData.csv"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
