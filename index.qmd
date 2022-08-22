@@ -4,13 +4,21 @@ title: "About this repository"
 
 ## General instructions
 
-This repository contains the codes used to obtain and analyze the data used on a research study. Read about the study [here](about.qmd).
+This repository contains the codes used to obtain and analyze the data used in a research study. Read about the study [here](about.qmd).
 
-The codes used here were written using `R version 4.0.3` and scripted on [Quarto](https://quarto.org/){target="_blank"} (`.qmd`) documents. Follow instruction on the [Get Started page](https://quarto.org/docs/get-started/){target="_blank"} of the Quarto website to run the scripts included in this repository.
+The analyses code were written using `R version 4.2.0` and scripted on [Quarto](https://quarto.org/){target="_blank"} (`.qmd`) documents. Follow instruction on the [Get Started page](https://quarto.org/docs/get-started/){target="_blank"} of the Quarto website to run the scripts included in this repository.
 
 ::: {.callout-tip}
 ## Reseach compendium
-The full research compendium with data and scripts used for this study is stored in an [Open Science Framework](https://osf.io/){target="_blank"} repository and can be accessed [here](https://osf.io/v53py/){target="_blank"}. Download the full repository and run the analysis in your machine.
+The full research compendium with data and scripts used for this study is stored in an [Open Science Framework](https://osf.io/){target="_blank"} repository and can be accessed [here](https://osf.io/v53py/){target="_blank"}. Download the **FULL** repository and run the analysis in your machine.
+
+:::
+
+::: {.callout-warning}
+
+# About the Data
+
+In the research repository, the directories containing the soil, weather, white mold are compressed (`data_era5.zip`,`soil_images.zip`, `data_white-mold.zip`). You should unzip these files in the main directory to be able to reproduce the analysis.
 
 :::
 

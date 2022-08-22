@@ -19,7 +19,7 @@ library(lemon)
 library(ggthemes)
 library(ggdist)
 library(patchwork)
-library(rgr)
+# library(rgr)
 library(vip)
 library(pdp)
 library(doParallel)
@@ -41,6 +41,14 @@ registerS3method("knit_print", "data.frame", knit_print.data.frame)
 ## Data Fusion
 
 ### Load white mold data
+
+::: {.callout-warning}
+
+# About the Data
+
+In the research [repository](https://osf.io/v53py/){target="_blank"}, the directories containing the soil, weather, white mold are compressed (`data_era5.zip`,`soil_images.zip`, `data_white-mold.zip`). You should unzip these files in the main directory to be able to reproduce the analysis.
+
+:::
 
 ```{r}
 wm_load = read.csv("data_white-mold/data_model_plus_weather_filtered.csv")
@@ -69,7 +77,9 @@ wm_data = wm_load %>%
   filter(!is.na(wm))
   
   
-wm_data
+wm_data %>% 
+  group_by(year) %>% 
+  summarise(length(unique(subject)))
 ```
 
 ### Functional data analysis data
@@ -327,6 +337,10 @@ ml_data_fda =soil_df %>%
 write.csv(ml_data_fda, "data_white-mold/data_tidy_xgboost.csv", row.names = F)
 ```
 
+
+
+
+
 ## XGboost modeling
 
 -   setting up parallel computation
@@ -368,7 +382,7 @@ ames_cv_folds <-
 xgboost_model <- 
   parsnip::boost_tree(
     mode = "classification",
-    trees = 5000,
+    trees = 2000,
     min_n = tune(),
     tree_depth = tune(),
     mtry = tune(),#<<<<<<<<<
@@ -376,6 +390,9 @@ xgboost_model <-
     loss_reduction = tune()
   ) %>%
     set_engine("xgboost")
+
+
+
 ```
 
 -   Grid Specification
@@ -385,7 +402,7 @@ xgboost_params <-
   dials::parameters(
     min_n(),
     finalize(mtry(), ml_data_fda),#<<<<<<<<<
-    tree_depth(range = c(1L, 5L)),
+    tree_depth(range = c(1L, 3L)),
     learn_rate(),
     loss_reduction()
   )
@@ -515,9 +532,15 @@ train_prediction1 <- trained_model %>%
   bind_cols(ml_data_fda)
 
 xgboost_score_train1 <- train_prediction1 %>%
-  yardstick::metrics(truth = wm, .pred_class, options = list(accuracy(), kap(), roc_auc())) #%>%
+  yardstick::metrics(truth = wm, 
+                     .pred_class, 
+                     # options = list(
+                       # accuracy(),
+                       # kap(),
+                       # roc_auc())
+                     ) #%>%
   # mutate(.estimate = format(round(.estimate, 2), big.mark = ","))
-xgboost_score_train1
+# xgboost_score_train1
 # trained_model$spec
 
 ```
@@ -540,9 +563,18 @@ train_prediction2 <- trained_model %>%
   predict(new_data = train_processed, type = c("prob")) %>%
   bind_cols(ml_data_fda)
 
-train_prediction2 %>% 
+roc_gg = train_prediction2 %>% 
   roc_curve(wm, .pred_1) %>% 
   autoplot()
+
+  roc_gg$data %>% 
+    ggplot(aes(1-specificity,sensitivity))+
+    geom_abline(slope = 1, intercept = 0,size =1, linetype =2 )+
+    geom_path(size =1)+
+    coord_equal()+
+  labs(x = "1-Specificity",
+       y = "Sensitivity")
+ggsave("figs/xboost_figs/roc.png", dpi=300,height = 4, width = 4, bg = "white")
 ```
 
 #### .metrics
@@ -682,6 +714,8 @@ final_xgb <- finalize_workflow( xgboost_wf, xgboost_best_params) %>%
            metrics = metric_set(accuracy, roc_auc, mn_log_loss, pr_auc, f_meas, precision, recall))
 final_xgb$.metrics
 
+# summary of model prediction
+summary(final_xgb$.predictions[[1]]$`.pred_1`)
 ```
 
 
@@ -693,8 +727,10 @@ fitted_data <- preprocessing_recipe %>%
   prep() %>%
   bake(new_data = ml_data_fda) %>%
   dplyr::select(-wm)
+
 # set.seed(1)
 xgb_model_extrac = extract_fit_engine(final_xgb)
+
 shap_data = fitted_data %>% as.matrix()
 colnames(shap_data) = xgb_model_extrac$feature_names
 # set.seed(1)
@@ -715,8 +751,8 @@ shap.plot.summary(data_long = shap_long,
 ```{r}
 shap_long_tidy = shap_long %>% 
   mutate(variable = as.character(variable)) %>% 
-  mutate(variable = case_when(variable == "theta_r" ~ "Residual soil water content",
-                              variable == "theta_s" ~ "Saturated soil water content",
+  mutate(variable = case_when(variable == "theta_r" ~ "Residual soil water",
+                              variable == "theta_s" ~ "Saturated soil water",
                               variable == "om" ~ "Soil organic matter",
                               variable == "ph" ~ "Soil pH",
                               variable == "bd" ~ "Soil bulk density",
@@ -733,15 +769,173 @@ shap_long_tidy = shap_long %>%
 
 #### SHAP summary plot
 
+```{r}
+shap_long_tidy2 = shap_long_tidy %>% 
+  mutate(variable = as.character(variable)) %>%
+  mutate(variable_name = case_when(variable == "SM (-15 to 50 dap)" ~ "SM",
+                                   variable == "T2M max (-15 to 7 dap)" ~ "T2M",
+                                   variable == "T2M max (12 to 19 dap)" ~ "T2M",
+                                   variable == "ST (13 to 23 dap)"  ~ "ST",
+                                   variable == "T2M min (39 to 50 dap)" ~ "T2M",
+                                   variable == "RH (40 to 50 dap)" ~ "RH",
+                                   variable == "T2M max (40 to 47 dap)" ~ "T2M",
+                                   variable == "T2M mean (-13 to 7 dap)" ~ "T2M",
+                                   variable == "T2M min (26 to 30 dap)" ~ "T2M",
+                                   variable == "ST (38 to 50 dap)" ~ "ST",
+                                   variable == "D2M (42 to 47 dap)" ~ "D2M",
+                                   variable == "T2M min (-11 to 6 dap)" ~ "T2M",
+                                   variable == "SP (-15 to 50 dap)" ~ "SP",
+                                   variable == "D2M (-12 to 6 dap)" ~ "D2M",
+                                   variable == "ST (-12 to 8 dap)" ~"ST",
+                                   variable == "T2M min (11 to 21 dap)" ~ "T2M",
+                                   variable == "T2M mean (39 to 48 dap)" ~ "T2M",
+                                   variable == "D2M (11 to 19 dap)" ~ "D2M",
+                                   variable == "T2M max (31 to 33 dap)" ~ "T2M",
+                                   variable == "T2M mean (11 to 20 dap)" ~ "T2M",
+                              TRUE ~ variable)) %>% 
+  
+  mutate(summary =       case_when(variable == "SM (-15 to 50 dap)"      ~ "mean",
+                                   variable == "T2M max (-15 to 7 dap)"  ~ "max",
+                                   variable == "T2M max (12 to 19 dap)"  ~ "max",
+                                   variable == "ST (13 to 23 dap)"       ~ "mean",
+                                   variable == "T2M min (39 to 50 dap)"  ~ "min",
+                                   variable == "RH (40 to 50 dap)"       ~ "mean",
+                                   variable == "T2M max (40 to 47 dap)"  ~ "max",
+                                   variable == "T2M mean (-13 to 7 dap)" ~ "mean",
+                                   variable == "T2M min (26 to 30 dap)"  ~ "min",
+                                   variable == "ST (38 to 50 dap)"       ~ "mean",
+                                   variable == "D2M (42 to 47 dap)"      ~ "mean",
+                                   variable == "T2M min (-11 to 6 dap)"  ~ "min",
+                                   variable == "SP (-15 to 50 dap)"      ~ "mean",
+                                   variable == "D2M (-12 to 6 dap)"      ~ "mean",
+                                   variable == "ST (-12 to 8 dap)"       ~ "mean",
+                                   variable == "T2M min (11 to 21 dap)"  ~ "min",
+                                   variable == "T2M mean (39 to 48 dap)" ~ "mean",
+                                   variable == "D2M (11 to 19 dap)"      ~ "mean",
+                                   variable == "T2M max (31 to 33 dap)"  ~ "max",
+                                   variable == "T2M mean (11 to 20 dap)" ~ "mean",
+                              TRUE ~ "")) %>% 
+  mutate(period =        case_when(variable == "SM (-15 to 50 dap)"      ~ "[-15:50]",
+                                   variable == "T2M max (-15 to 7 dap)"  ~ "[-15:7]",
+                                   variable == "T2M max (12 to 19 dap)"  ~ "[12:19]",
+                                   variable == "ST (13 to 23 dap)"       ~ "[13:23]",
+                                   variable == "T2M min (39 to 50 dap)"  ~ "[39:50]",
+                                   variable == "RH (40 to 50 dap)"       ~ "[40:50]",
+                                   variable == "T2M max (40 to 47 dap)"  ~ "[40:47]",
+                                   variable == "T2M mean (-13 to 7 dap)" ~ "[-13:7]",
+                                   variable == "T2M min (26 to 30 dap)"  ~ "[26:30]",
+                                   variable == "ST (38 to 50 dap)"       ~ "[38:50]",
+                                   variable == "D2M (42 to 47 dap)"      ~ "[42:47]",
+                                   variable == "T2M min (-11 to 6 dap)"  ~ "[-11:6]",
+                                   variable == "SP (-15 to 50 dap)"      ~ "[-15:50]",
+                                   variable == "D2M (-12 to 6 dap)"      ~ "[-12:6]",
+                                   variable == "ST (-12 to 8 dap)"       ~ "[-12:8]",
+                                   variable == "T2M min (11 to 21 dap)"  ~ "[11:21]",
+                                   variable == "T2M mean (39 to 48 dap)" ~ "[39:48]",
+                                   variable == "D2M (11 to 19 dap)"      ~ "[11:19]",
+                                   variable == "T2M max (31 to 33 dap)"  ~ "[31:33]",
+                                   variable == "T2M mean (11 to 20 dap)" ~ "[11:20]",
+                              TRUE ~ "")) %>% 
+  mutate(unit =         case_when(variable == "SM (-15 to 50 dap)"      ~ "(m³/m³)",
+                                  variable == "T2M max (-15 to 7 dap)"  ~ "(°C)",
+                                  variable == "T2M max (12 to 19 dap)"  ~ "(°C)",
+                                  variable == "ST (13 to 23 dap)"       ~ "(°C)",
+                                  variable == "T2M min (39 to 50 dap)"  ~ "(°C)",
+                                  variable == "RH (40 to 50 dap)"       ~ "(%)",
+                                  variable == "T2M max (40 to 47 dap)"  ~ "(°C)",
+                                  variable == "T2M mean (-13 to 7 dap)" ~ "(°C)",
+                                  variable == "T2M min (26 to 30 dap)"  ~ "(°C)",
+                                  variable == "ST (38 to 50 dap)"       ~ "(°C)",
+                                  variable == "D2M (42 to 47 dap)"      ~ "(°C)",
+                                  variable == "T2M min (-11 to 6 dap)"  ~ "(°C)",
+                                  variable == "SP (-15 to 50 dap)"      ~ "(Pa)",
+                                  variable == "D2M (-12 to 6 dap)"      ~ "(°C)",
+                                  variable == "ST (-12 to 8 dap)"       ~ "(°C)",
+                                  variable == "T2M min (11 to 21 dap)"  ~ "(°C)",
+                                  variable == "T2M mean (39 to 48 dap)" ~ "(°C)",
+                                  variable == "D2M (11 to 19 dap)"      ~ "(°C)",
+                                  variable == "T2M max (31 to 33 dap)"  ~ "(°C)",
+                                  variable == "T2M mean (11 to 20 dap)" ~ "(°C)",
+                                  variable == "Residual soil water" ~ "(m³/m³)",
+                                  variable == "Saturated soil water"~ "(m³/m³)",
+                                  variable == "Soil organic matter"~ "(%)",
+                                  variable == "Soil pH"~ "",
+                                  variable == "Soil bulk density"~ "(g/cm³)",
+                                  variable == "log(Sand/Clay)"~ "",
+                                  variable == "log(Silt/Clay)"~ "",
+                                  variable == "Elevation"~ "(m)",
+                                  variable == "Planting date" ~ "(Julian day)"))%>% 
+  mutate(variable = factor(variable, levels = unique(shap_long_tidy$variable) )) %>% 
+  # unite(new1,  summary,variable_name, sep = "" ) %>% 
+  # unite(new_name, new1, period, sep ="")
+  arrange(mean_value)
+# unique(shap_long_tidy2$variable_name)
+```
+
+##### Plot
+
+##### labels 
+
+creating new vector of label
+
+Without unit
+```{r}
+labels2 = c(bquote(.((shap_long_tidy2$variable_name)[1])[.((shap_long_tidy2$period)[1])]^.((shap_long_tidy2$summary)[1])))
+
+for(i in 2:length(shap_long_tidy2$variable_name)){
+  labels1 = c(bquote(.((shap_long_tidy2$variable_name)[i])[.((shap_long_tidy2$period)[i])]^.((shap_long_tidy2$summary)[i])))
+  labels2 = c(labels2,labels1)
+}
+labelsx = cbind(labels2)
+labels = cbind(unique(labels2))
+
+labels_ori = rev(as.character(unique(shap_long_tidy2$variable)))
+
+```
+
+with units
+
+```{r}
+labels2_u = c(bquote(.((shap_long_tidy2$variable_name)[1])[.((shap_long_tidy2$period)[1])]^.((shap_long_tidy2$summary)[1])~.((shap_long_tidy2$unit)[1])))
+
+for(i in 2:length(shap_long_tidy2$variable_name)){
+  labels1_u = c(bquote(.((shap_long_tidy2$variable_name)[i])[.((shap_long_tidy2$period)[i])]^.((shap_long_tidy2$summary)[i])~.((shap_long_tidy2$unit)[i])))
+  labels2_u = c(labels2_u,labels1_u)
+}
+labelsx_u = cbind(labels2_u)
+labels_u = cbind(unique(labels2_u))
+
+labels_ori_u = rev(as.character(unique(shap_long_tidy2$variable)))
+labels_u[[1]]
+```
+
+
+
+<!-- ```{r} -->
+<!-- shap_long_tidy2 %>%  -->
+<!--   ggplot(aes(mean_value,reorder(variable, mean_value)))+ -->
+<!--   geom_errorbar(aes(xmin = 0, xmax = mean_value), -->
+<!--                 width = 0,color = "gray60")+ -->
+<!--   geom_point( size= 3, color = "gray60")+ -->
+<!--   scale_y_discrete(labels =labels )+ -->
+<!--   background_grid(major = c("y"), size.major = 0.2)+ -->
+<!--   labs(x = "Mean(|SHAP value|)", -->
+<!--        y ="", -->
+<!--        color = 'Predictor value', -->
+<!--        subtitle = "Global predictor importance") -->
+<!-- ``` -->
+
+
+
+
 ```{r fig.height=6, fig.width=8}
 #graph1
-shap_long_tidy %>% 
-  ggplot(aes(mean_value,reorder(variable, mean_value), color = mean_value))+
+shap_long_tidy2 %>% 
+  ggplot(aes(mean_value,reorder(variable, mean_value)))+
   geom_errorbar(aes(xmin = 0, xmax = mean_value),
-                width = 0)+
-  geom_point( size= 2)+
-  scale_color_gradient(low ="#1e88e5ff", high = "#ff0d57ff",limits =c(0,1),
-                       breaks = c(0, 1), labels = c(" Low", "High "))+
+                width = 0,color = "gray60")+
+  geom_point( size= 3, color = "gray60")+
+  scale_y_discrete(labels =labels )+
   background_grid(major = c("y"), size.major = 0.2)+
   labs(x = "Mean(|SHAP value|)",
        y ="",
@@ -751,17 +945,20 @@ shap_long_tidy %>%
   
   
 #graph2
-shap_long_tidy %>% 
+shap_long_tidy2 %>% 
   mutate(variable = str_replace(variable, "`", ""),
          variable = str_replace(variable, "`", "")) %>% 
   ggplot(aes(value, reorder(variable, mean_value), color = stdfvalue))+
   geom_vline(xintercept = 0, linetype =2) +
-  geom_jitter(height = 0.2)+
+  geom_jitter(aes(y = stage(start = reorder(variable, mean_value), after_scale = y - 0.1)),
+    height = 0.1, alpha = 0.4)+
+  stat_slab(fill = "gray", normalize = "xy", alpha=0.6)+
   scale_color_gradient(low ="#1e88e5ff", high = "#ff0d57ff",limits =c(0,1),
-                       breaks = c(0, 1), labels = c(" Low", "High "))+
+                       breaks = c(0, 1), labels = c(" Low", "High "),
+                       guide = guide_colorbar(barwidth = 0.3,barheight =20 ))+
   labs(x = "SHAP value (impact on model output)",
        y = "",
-       color = 'Predictor value',
+       color = 'Predictor\nvalue',
        subtitle = "Local explanation summary")+
   scale_x_continuous(breaks = seq(-3, 3,0.5 ))+
   background_grid(major = c("y"), size.major = 0.2)+
@@ -775,10 +972,14 @@ shap_long_tidy %>%
   plot_layout(guides = "collect",widths = c(1,1.5) )+
   plot_annotation(tag_levels = "A")
   
-ggsave("figs/xboost_figs/SHAP_values.png",height = 6, width = 12, dpi=600, bg = "white")
+ggsave("figs/xboost_figs/SHAP_values.png",height = 8, width = 9, dpi=600, bg = "white")
 ```
 
 #### SHAP Dependence plots
+
+##### Ten most influential
+
+###### plain naming
 
 ```{r message=FALSE, warning=FALSE, fig.height=10, fig.width=12}
 # do.call(patchwork::wrap_plots, lapply(var_names12[1:9],influence_plot))+
@@ -814,11 +1015,99 @@ do.call(patchwork::wrap_plots,
 )+
   plot_layout(ncol = 2)+
   plot_annotation(tag_levels = "A")
-ggsave("figs/xboost_figs/shap_dependence.png", dpi = 900, height = 11, width = 7,bg="white")
+# ggsave("figs/xboost_figs/shap_dependence.png", dpi = 900, height = 11, width = 7,bg="white")
 
 ```
 
 
+
+<!-- ```{r} -->
+<!-- shap_long_tidy3 = shap_long_tidy2 %>%  -->
+<!--   mutate(labelsx) -->
+<!-- ``` -->
+###### math naming
+```{r message=FALSE, warning=FALSE, fig.height=10, fig.width=12}
+# do.call(patchwork::wrap_plots, lapply(var_names12[1:9],influence_plot))+
+shap_vars =  as.character(unique(shap_long_tidy$variable))
+rev_labels = rev(labels)
+rev_labels_u = rev(labels_u)
+labels_ori_df = data.frame(labels_ori, id = 1:length(labels_ori))
+
+do.call(patchwork::wrap_plots,
+        lapply(1:10,
+               function(i){
+                 plot = shap.plot.dependence(data_long = shap_long_tidy2,
+                                      x = shap_vars[i],
+                                      smooth = F,
+                                      color_feature = NULL,
+                                      alpha = 0.3)
+
+                  # inter_var = gsub("\n()","",
+                  #                  gsub( "(Feature value)","", x = as.character(plot$labels$colour), fixed = TRUE)
+                                   # )
+                 # selec_id =  labels_ori_df %>% 
+                 #    filter(labels_ori == inter_var)
+        plot$layers[[1]] <- NULL
+
+                 plot+
+                   
+                   geom_point(color = "gray")+
+                   geom_hline(yintercept = 0, linetype = 2, color = "black")+
+                   geom_smooth(se = F,
+                               size = 1.2,
+                               color = "#1c75bc",
+                               method = "gam",
+                               formula = y ~ s(x, bs = "cs", k = 15))+
+                   theme_half_open(font_size = 10)+
+                   scale_color_gradient(low ="#1e88e5ff",
+                                        high = "#ff0d57ff",
+                                        n.breaks = 5,
+                                        guide = guide_colorbar(barwidth = 0.3,
+                                                               barheight = 3))+
+                   labs(#title = rev_labels[[i]],
+                        y = "SHAP values",
+                        x = rev_labels_u[[i]],
+                        # y = bquote(SHAP~values~`for`~.(rev_labels[[i]])),
+                        #color =  bquote(.(rev_labels_u[[selec_id$id]]))
+                        )+
+                   
+                   scale_x_continuous(n.breaks = 6)+
+                   scale_y_continuous(limits = c(-1.25, 1.27))+
+                   theme(legend.position = "right",
+                         # legend.text = element_text(size=6, angle = 0),
+                         # legend.title = element_text(size=8),
+                         axis.text = element_text(size=8, angle = 0),
+                         axis.title.y =  element_text(size=9))
+                 
+                 
+                 
+
+}
+)
+)+
+plot_layout(ncol = 2)+
+plot_annotation(tag_levels = "A")& 
+  theme(plot.tag = element_text(vjust = -0.2, hjust =0.5),
+        axis.title.y = element_blank()) -> depen1
+# Convert to gtable
+gt1 <- patchworkGrob(depen1)
+gg1 = gridExtra::grid.arrange(gt1, left = "SHAP values")
+
+ggsave(plot = gg1,"figs/xboost_figs/shap_dependence.png", dpi = 900, height = 8, width = 6,bg="white")
+
+
+
+```
+
+
+
+
+
+
+
+##### Remaining
+
+###### plain naming
 ```{r message=FALSE, warning=FALSE, fig.height=10, fig.width=12}
 
 do.call(patchwork::wrap_plots,
@@ -850,9 +1139,101 @@ do.call(patchwork::wrap_plots,
   plot_layout(ncol = 4)+
   plot_annotation(tag_levels = "A")
 
-ggsave("figs/xboost_figs/shap_dependence_remainig.png", dpi = 600, height = 15, width = 15,bg="white")
+# ggsave("figs/xboost_figs/shap_dependence_remainig.png", dpi = 600, height = 15, width = 15,bg="white")
 ```
 
+
+###### math naming
+
+```{r}
+do.call(patchwork::wrap_plots,
+        lapply(11:length(shap_vars),
+               function(i){
+                 plot = shap.plot.dependence(data_long = shap_long_tidy2,
+                                      x = shap_vars[i],
+                                      smooth = F,
+                                      color_feature = NULL,
+                                      alpha = 0.3)
+
+                  # inter_var = gsub("\n()","",
+                  #                  gsub( "(Feature value)","", x = as.character(plot$labels$colour), fixed = TRUE)
+                                   # )
+                 # selec_id =  labels_ori_df %>% 
+                 #    filter(labels_ori == inter_var)
+        plot$layers[[1]] <- NULL
+
+                 plot+
+                   geom_point(color = "gray")+
+                   geom_hline(yintercept = 0, linetype = 2, color = "black")+
+                   geom_smooth(se = F,
+                               size = 1.2,
+                               color = "#1c75bc",
+                               method = "gam",
+                               formula = y ~ s(x, bs = "cs", k = 15))+
+                   theme_half_open(font_size = 10)+
+                   scale_color_gradient(low ="#1e88e5ff",
+                                        high = "#ff0d57ff",
+                                        n.breaks = 5,
+                                        guide = guide_colorbar(barwidth = 0.3,
+                                                               barheight = 3))+
+                   labs(#title = rev_labels[[i]],
+                        y = "SHAP values",
+                        x = rev_labels_u[[i]],
+                        # y = bquote(SHAP~values~`for`~.(rev_labels[[i]])),
+                        #color =  bquote(.(rev_labels_u[[selec_id$id]]))
+                        )+
+                   # ylab(labels[[1]])+
+                   scale_x_continuous(n.breaks = 6)+
+                   # scale_y_continuous(limits = c(-1.25, 1.27))+
+                   theme(legend.position = "right",
+                         # legend.text = element_text(size=6, angle = 0),
+                         # legend.title = element_text(size=8),
+                         axis.text = element_text(size=7),
+                         axis.title.y =  element_text(size=9))
+                 
+                 
+                 
+
+}
+)
+)+
+  plot_layout(ncol = 4)+
+  plot_annotation(tag_levels = "A")& 
+  theme(plot.tag = element_text(vjust = -0.2, hjust =0.5),
+        axis.title.y = element_blank())-> depen2
+# Convert to gtable
+gt2 <- patchworkGrob(depen2)
+gg2 = gridExtra::grid.arrange(gt2, left = "SHAP values")
+
+ggsave(plot = gg2,"figs/xboost_figs/shap_dependence_remainig.png", dpi = 600, height = 8, width = 10, bg="white")
+
+
+```
+
+## Variables distribution
+```{r}
+plot_hist = function(i){
+
+shap_long_tidy2 %>%
+  filter(variable == shap_vars[i]) %>%  
+  ggplot(aes(rfvalue))+
+  geom_histogram(bins = 20,fill = "#1c75bc",color = "black")+
+    scale_x_continuous(n.breaks = 6)+
+  labs(x = rev_labels_u[[i]],
+       y = "Frequency")+
+    theme(axis.text = element_text(size=7),
+          axis.title.y =  element_text(size=9))
+
+}
+do.call(patchwork::wrap_plots,
+        lapply(1:10,plot_hist))+
+  plot_layout(ncol=2)+
+plot_annotation(tag_levels = "A")& 
+  theme(plot.tag = element_text(vjust = -0.2, hjust =0.5))
+
+ggsave("figs/xboost_figs/var_dist.png", dpi = 900, height = 8, width = 6,bg="white")
+
+```
 
 
 

@@ -43,6 +43,14 @@ registerS3method("knit_print", "data.frame", knit_print.data.frame)
 
 Loading white mold data. We are going to use the field coordinates (latitude and longitude) to extract the data from the rasters of soil variables.
 
+::: {.callout-warning}
+
+# About the Data
+
+In the research [repository](https://osf.io/v53py/){target="_blank"}, the directories containing the soil, weather, white mold are compressed (`data_era5.zip`,`soil_images.zip`, `data_white-mold.zip`). You should unzip these files in the main directory to be able to reproduce the analysis.
+
+:::
+
 ```{r}
 wm_data = read.csv("data_white-mold/WhiteMoldSurveyWrangledData.csv")
 ```

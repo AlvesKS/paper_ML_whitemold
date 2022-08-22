@@ -20,10 +20,20 @@ library(ggthemes)
 library(patchwork)
 library(mgcv)
 library(mgcViz)
-library(itsadug)
+library(ggdist)
 library(tidymv)
+library(grid)
+library(gridExtra)
+
 theme_set(theme_half_open(font_size = 12))
 ```
+
+::: callout-warning
+# About the `tidymv` package
+
+`tidymv` will be deprecated. Users are recommended to check out the in-progress replacement [tidygam](https://github.com/stefanocoretta/tidygam).
+
+:::
 
 ```{r eval=TRUE, include=FALSE}
 library(knitr)
@@ -37,6 +47,15 @@ registerS3method("knit_print", "data.frame", knit_print.data.frame)
 ```
 
 # Load Data
+
+::: {.callout-warning}
+
+# About the Data
+
+In the research [repository](https://osf.io/v53py/){target="_blank"}, the directories containing the soil, weather, white mold are compressed (`data_era5.zip`,`soil_images.zip`, `data_white-mold.zip`). You should unzip these files in the main directory to be able to reproduce the analysis.
+
+:::
+
 
 ```{r}
 wm_load = read.csv("data_white-mold/data_model_plus_weather_filtered.csv")
@@ -106,8 +125,12 @@ wm_datax %>%
   filter(!is.na(gscat)) %>% 
   group_by(subject, gscat) %>% 
   summarise(dap = max(dap)) %>% 
+  mutate(gscat = factor(gscat, levels = c( "Harvest" , "Pod", "Bloom" , "Pre-bloom"))) %>% 
   ggplot(aes(dap, reorder(gscat, dap), fill= gscat))+
-  ggdist::stat_halfeye()+
+  ggdist::stat_slab()+
+  ggdist::stat_pointinterval(.width = c(0.95),
+                             point_size = 2,
+                             interval_size = 1, show.legend = F)+
   scale_fill_calc()+
   background_grid(size.major = 0.1)+
   scale_x_continuous(breaks = seq(15, 80, 5))+
@@ -191,6 +214,8 @@ gg_temp_diff= get_smooths_difference(gam_mtemp, dap, list(wm = c("1", "0")), ser
 
 
 gg_temp_diff %>%
+  mutate(sig_diff = ifelse(sig_diff==TRUE,"Yes", "No"),
+         sig_diff = factor(sig_diff, levels = c("Yes", "No"))) %>% 
   ggplot(aes(dap, difference, group = group))+
   annotate("rect",ymin = -Inf, ymax = Inf, xmin = 35, xmax = 50, fill = "steelblue", alpha = 0.2)+
   
@@ -198,8 +223,7 @@ gg_temp_diff %>%
   geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper, fill = sig_diff), alpha = 1)+
   geom_line(size =1, color = "white")+
   geom_hline(yintercept = 0, color = "gray", linetype = "dashed")+
-  # scale_fill_colorblind()+
-  scale_fill_manual(values = c("black", "red"))+
+  scale_fill_manual(values = c("Yes" = "steelblue","No" = "#707181"))+
   scale_x_continuous(breaks = seq(-30, 70, by =10))+
   labs(x = "Days relative to planting date",
        y = "Difference",
@@ -259,14 +283,14 @@ plot_curves_fda = function(i, model, var){
               linetype =0, 
               alpha = 0.5)+
   geom_line(size = .8)+
-  scale_color_colorblind(labels = c( "Non-prevalent","Prevalent"))+
-  scale_fill_colorblind(labels = c( "Non-prevalent","Prevalent"))+
+  scale_color_colorblind(labels = c( "Absent","Present"))+
+  scale_fill_colorblind(labels = c( "Absent","Present"))+
   scale_x_continuous(breaks = seq(-30, 60, by =15))+
   scale_y_continuous(n.breaks = 5)+
   labs(x = "Days relative to planting date",
        y = paste(var[i]),
-       fill = "",
-       color ="",
+       fill = "White mold",
+       color ="White mold",
        title = paste(var[i]))+
   theme(legend.position = "top")
 }
@@ -278,18 +302,27 @@ X =1:length(vars)
 Here we plot all the curves in a combo figure
 
 ```{r}
-do.call(patchwork::wrap_plots,
+curves_panel = do.call(patchwork::wrap_plots,
         lapply(X, plot_curves_fda, model = gam_list, var = var_fulnames))+
   plot_layout(guides = "collect",
               ncol = 2)+
   plot_annotation(tag_levels = "A")&
   theme(axis.text = element_text(size=6),
+        axis.title.x = element_blank(),
         axis.title = element_text(size=6),
         plot.title = element_text(size=7),
-        legend.position = "bottom")
+        legend.title = element_text(size=7),
+        legend.text= element_text(size=7),
+        legend.position = "right")
 
 #save figure
-ggsave("figs/fda_figs/curves_gam_fda.png", dpi = 600,  width = 5, height = 6, bg = "white") 
+
+gt_curv <- patchworkGrob(curves_panel)
+gg1 = gridExtra::grid.arrange(gt_curv,
+                              bottom = textGrob("Days relative to planting date", gp=gpar(fontsize=10)))
+
+
+ggsave(plot = gg1, "figs/fda_figs/curves_gam_fda.png", dpi = 600,  width = 6, height = 6, bg = "white") 
 
 ```
 
@@ -303,14 +336,17 @@ ggplot_diff = function(i, model, var){
 ggdiff = get_smooths_difference(model[[i]], dap, list(wm = c("1", "0")),series_length = 1500)
 
 ggdiff %>%
+  mutate(sig_diff = ifelse(sig_diff==TRUE,"Yes", "No"),
+         sig_diff = factor(sig_diff, levels = c("Yes", "No"))) %>% 
   ggplot(aes(dap, difference))+
   annotate("rect",ymin = -Inf, ymax = Inf, xmin = 35, xmax = 50, fill = "#ce9ea1", alpha = 0.3)+
   geom_vline(xintercept = 0, color = "black", linetype = "dashed", size = 0.2)+
   geom_ribbon(aes(ymin = CI_lower, ymax = CI_upper, fill = sig_diff, group = group), alpha = 1)+
   geom_line(size =0.5, color = "white")+
   geom_hline(yintercept = 0, color = "black", linetype = "dashed", size = 0.2)+
-  scale_fill_manual(values = c("FALSE" = "#707181",
-                              "TRUE" = "steelblue"))+##cd2b2d
+  # scale_fill_manual(values = c("FALSE" = "#707181",
+  #                             "TRUE" = "steelblue"))+
+  scale_fill_manual(values = c("Yes" = "steelblue","No" = "#707181"))+
   scale_x_continuous(breaks = seq(-30, 60, by =15))+
   labs(x = "Days relative to planting date",
        y = "Difference",
@@ -327,18 +363,24 @@ X =1:length(vars)
 ##### Visualization
 
 ```{r fig.height=8, fig.width=6}
-do.call(patchwork::wrap_plots,
+diff_panel = do.call(patchwork::wrap_plots,
         lapply(X, ggplot_diff, model = gam_list, var = var_fulnames))+
   plot_layout(guides = "collect",
               ncol = 2)+
   plot_annotation(tag_levels = "A")&
   theme(axis.text = element_text(size=7),
-        axis.title = element_text(size=6),
+        axis.title =  element_blank(),
         plot.title = element_text(size=9),
-        legend.position = "bottom")
+        legend.position = "right") 
 
+# Convert to gtable
+gt2 <- patchworkGrob(diff_panel)
+gg2 = gridExtra::grid.arrange(gt2,
+                              left = "Difference",
+                              bottom = "Days relative to planting date")
+# diff_panel
 # save figure
-ggsave("figs/fda_figs/diff_gam.png", dpi = 900, width = 5, height = 6, bg = "white") 
+ggsave(plot = gg2,"figs/fda_figs/diff_gam.png", dpi = 900, width = 6, height = 6, bg = "white") 
 
 ```
 

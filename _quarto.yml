@@ -16,6 +16,11 @@ project:
     - "!shape_files/"
     - "!soil_images/"
     - "!xgboost/"
+    - "!README.md"
+    - "!LICENSE"
+    - "!quarto/"
+    - "!*.ini"
+
 
     
 # editor: visual
@@ -60,7 +65,7 @@ website:
       
 format:
   html:
-    self-contained: false
+    self-contained: true
     # theme: cosmo
     css: styles.css
     toc: true

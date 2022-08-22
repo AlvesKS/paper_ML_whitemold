@@ -29,6 +29,14 @@ library(MetBrewer)
 
 ## White mold data
 
+::: {.callout-warning}
+
+# About the Data
+
+In the research [repository](https://osf.io/v53py/){target="_blank"}, the directories containing the soil, weather, white mold are compressed (`data_era5.zip`,`soil_images.zip`, `data_white-mold.zip`). You should unzip these files in the main directory to be able to reproduce the analysis.
+
+:::
+
 ```{r}
 wm_data = read.csv("data_white-mold/WhiteMoldSurveyWrangledData.csv")
 
@@ -38,7 +46,17 @@ wm_data = read.csv("data_white-mold/WhiteMoldSurveyWrangledData.csv")
 
 ```{r}
 wm_data2 = wm_data %>% 
-  filter(!is.na(latitude))  
+  filter(!is.na(latitude)) 
+
+# wm_data2 %>% 
+#   group_by(subject) %>% 
+#   mutate(wm = (mean(wm, na.rm =T)>0)*1) %>% 
+#   ungroup() %>% 
+#   filter(!is.na(wm)) %>% 
+#   group_by(subject) %>% 
+#   slice(1L) %>% 
+#   ungroup() %>% 
+#   count(irrigation)
 ```
 
 ### Names of the counties in the dataset
@@ -69,8 +87,10 @@ snap_map = ny_map_data %>%
                fill= "white",
                color = "black",
                size =0.3)+
-  geom_polygon(aes(x=long, y = lat, group = group, fill=region2),
-               # fill= "gray90",
+  geom_polygon(aes(x=long, y = lat, group = group,
+                   # fill=region2
+                   ),
+               fill= "#fafced",
                color = "black",
                size =0.3)+
   geom_point(data = wm_data2 %>% 
@@ -78,13 +98,16 @@ snap_map = ny_map_data %>%
                filter(dap == max(dap),
                        !is.na(wm)) %>%
                ungroup() %>% 
-               filter(year == yearr)  , 
-                size = 0.4,
+               filter(year == yearr) %>% 
+               arrange(wm),
+                size = 1,
              aes(longitude,latitude, color = wm>0))+
   coord_map(xlim = c(-80,-76.7),
             ylim = c(41.8, 43.5))+
-  scale_fill_manual(values = c("gray85", "gray70"))+
-  scale_color_colorblind(labels = c("Absent", "Present"))+
+  # scale_fill_manual(values = c("gray85", "gray70"))+
+  # scale_color_colorblind(labels = c("Absent", "Present"))+
+  scale_color_manual(labels = c("Absent", "Present"),
+                     values = c("#009E73", "#E69F00"))+
   guides(color = guide_legend(override.aes = list(size=3)),
          fill = "none")+
   theme_minimal()+
@@ -118,8 +141,10 @@ ny_map = ny_map_data %>%
                color = "black",
                size =0.3
                )+
-  geom_polygon(aes(x=long, y = lat, group = group, fill=region2),
-               # fill= "gray90",
+  geom_polygon(aes(x=long, y = lat, group = group,
+                   # fill=region2
+                   ),
+               fill= "#fafced",
                color = "black",
                size =0.3)+
   annotate("rect", xmin = -80, xmax = -76.5,
@@ -131,7 +156,7 @@ ny_map = ny_map_data %>%
   # coord_map(xlim = c(-80,-73),
             # ylim = c(40, 45))+
   coord_map()+
-   scale_fill_manual(values = c("gray85", "gray70"))+
+   # scale_fill_manual(values = c("gray85", "gray70"))+
   theme_void()+
   labs(x = "Longitude",
        y = "Latitude",
@@ -154,11 +179,15 @@ ny_map
   plot_annotation(tag_levels = "A")&
   theme(legend.text = element_text(size=6),
         legend.title = element_text(size=8),
-        legend.key.size = unit(0.4, 'cm'))
+        legend.key.size = unit(0.4, 'cm'),
+        plot.title = element_text(face = "bold"),
+        plot.tag = element_text(face = "bold"))
 
 ggsave("figs/maps/maps_fields.png", dpi= 900, height = 6, width = 7, bg = "white")
 
 ```
+
+
 
 ## [ERA5](https://confluence.ecmwf.int/display/CKB/The+family+of+ERA5+datasets)
 
